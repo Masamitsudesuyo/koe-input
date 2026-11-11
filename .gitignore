@@ -1,0 +1,10 @@
+config.toml
+dictionary.txt
+data/
+.version
+.repo
+.venv/
+uv.lock
+__pycache__/
+*.pyc
+.DS_Store

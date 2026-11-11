@@ -1,0 +1,34 @@
+# ===== koe-input 設定ファイル =====
+# このファイルを config.toml という名前でコピーして使います。
+# config.toml には API キー（パスワードに相当する文字列）が入るので、他人に見せないでください。
+
+# 使うサービス: "groq"（無料枠あり）または "openai"（従量課金）
+provider = "groq"
+
+# 話す言語（日本語は "ja"）
+language = "ja"
+
+[groq]
+api_key = ""                          # https://console.groq.com/keys で発行したキーを "" の中に貼る
+stt_model = "whisper-large-v3-turbo"  # 音声→文字 のモデル
+llm_model = "openai/gpt-oss-120b"     # 文章整形 のモデル
+llm_reasoning_effort = "low"          # 整形モデルの思考量。low にすると速い
+
+[openai]
+api_key = ""                          # https://platform.openai.com/api-keys で発行したキーを貼る
+stt_model = "gpt-4o-mini-transcribe"
+llm_model = "gpt-4.1-mini"
+llm_reasoning_effort = ""             # gpt-4.1-mini では使わないので空のまま
+
+[behavior]
+mode = "toggle"            # "toggle" = 押して離す→話す→もう一度押すと入力 / "hold" = 押している間だけ録音
+cleanup = true             # false にすると AI 整形をせず、文字起こしをそのまま入力する
+tap_threshold_sec = 0.35   # mode = "hold" のとき、この秒数より短く押すとトグル動作になる
+min_record_sec = 0.4       # これより短い録音は誤操作とみなして捨てる
+restore_clipboard = false  # true にすると貼り付け後にクリップボードを元に戻す
+sounds = true              # 録音開始・終了時に効果音を鳴らす
+history_port = 8765        # 履歴ページのポート番号（http://127.0.0.1:8765）
+
+[update]
+auto = true                # true = GitHub に新しい版があれば自動で取り込んで再起動する
+check_interval_hours = 6   # 何時間ごとに新しい版を確認するか
