@@ -26,7 +26,7 @@ pkill -f "python -m koe" 2>/dev/null || true
 sleep 1
 
 # --- 3. 最新のプログラムをダウンロード ---
-echo "[3/6] 最新版をダウンロードします（$REPO）"
+echo "[3/6] 最新版をダウンロードします（${REPO}）"
 SHA=$(curl -fsSL -H "Accept: application/vnd.github.sha" "https://api.github.com/repos/$REPO/commits/main")
 TMP=$(mktemp -d)
 curl -fsSL "https://codeload.github.com/$REPO/zip/$SHA" -o "$TMP/src.zip"
@@ -55,9 +55,9 @@ APP_DIR="/Applications"
 APP="$APP_DIR/$APP_NAME.app"
 if [ -d "$APP" ]; then
   # 作り直すと Mac の許可（マイク等）が外れるため、既にあれば作らない
-  echo "[5/6] アプリは作成済みです（$APP）"
+  echo "[5/6] アプリは作成済みです（${APP}）"
 else
-  echo "[5/6] アプリを作成します（$APP）"
+  echo "[5/6] アプリを作成します（${APP}）"
   osacompile -o "$APP" -e "do shell script \"/bin/bash '$DIR/scripts/run.sh' > /dev/null 2>&1\""
   PL="$APP/Contents/Info.plist"
   setplist() {  # 項目があれば変更、無ければ追加
