@@ -21,14 +21,24 @@ def set_clipboard(text: str):
     subprocess.run(["pbcopy"], input=text.encode("utf-8"), env=_ENV, check=True)
 
 
-def press_paste():
-    """Cmd+V を送って、いまカーソルがある場所に貼り付ける。"""
-    from pynput.keyboard import Controller, Key
+KEYCODE_V = 9  # キーボード上の「V」の位置を表す番号（JIS・US 配列共通）
 
-    kb = Controller()
-    with kb.pressed(Key.cmd):
-        kb.press("v")
-        kb.release("v")
+
+def press_paste():
+    """Cmd+V を送って、いまカーソルがある場所に貼り付ける。
+
+    以前は pynput で送っていたが、文字→キー番号の変換で Mac の入力ソース機能を
+    メイン スレッド以外から呼ぶため、アプリが落ちることがあった。
+    キー番号を直接指定して Mac の仕組み(Quartz)で送ることで、その変換を通らないようにしている。
+    """
+    import Quartz
+
+    src = Quartz.CGEventSourceCreate(Quartz.kCGEventSourceStateCombinedSessionState)
+    for down in (True, False):
+        ev = Quartz.CGEventCreateKeyboardEvent(src, KEYCODE_V, down)
+        Quartz.CGEventSetFlags(ev, Quartz.kCGEventFlagMaskCommand)
+        Quartz.CGEventPost(Quartz.kCGAnnotatedSessionEventTap, ev)
+        time.sleep(0.02)
 
 
 def paste_text(text: str, restore_clipboard: bool = False):

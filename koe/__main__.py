@@ -30,6 +30,9 @@ class App:
         self.status = "idle"             # idle / rec / busy / error（メニューバーの表示用）
         self.last_text = ""
         self.restart_requested = False
+        self.rec_started = 0.0           # 録音開始時刻（画面下の表示で経過時間を出すため）
+        self.flash_text = ""             # 処理後に一瞬だけ画面下に出す文字
+        self.flash_until = 0.0
         self.lock = threading.Lock()
         tap = 1e9 if self.b["mode"] == "toggle" else self.b["tap_threshold_sec"]
         self.sm = HotkeyStateMachine(
@@ -39,6 +42,9 @@ class App:
     def sound(self, name):
         if self.b["sounds"]:
             macos.play(name)
+
+    def flash(self, text: str, sec: float = 1.5):
+        self.flash_text, self.flash_until = text, time.monotonic() + sec
 
     def is_idle(self) -> bool:
         return not self.recording and self.pending == 0
@@ -57,6 +63,7 @@ class App:
             try:
                 self.recorder.start()
                 self.recording = True
+                self.rec_started = time.monotonic()
                 self.status = "rec"
                 self.sound("start")
                 print("● 録音中…", flush=True)
@@ -84,6 +91,7 @@ class App:
                 self.recording = False
                 self._refresh_status()
                 self.sound("cancel")
+                self.flash("× 取り消しました")
                 print("× 取り消しました", flush=True)
 
     def _process_wrapper(self, audio):
@@ -104,6 +112,7 @@ class App:
         dur = duration_sec(audio)
         if dur < self.b["min_record_sec"] or is_silent(audio):
             print(f"  （{dur:.1f}秒・無音のためスキップ）", flush=True)
+            self.flash("🔇 声が聞き取れませんでした", 2.5)
             return
         dic = Dictionary.load(DICT_PATH)  # 毎回読むので辞書の編集がすぐ反映される
         t0 = time.time()
@@ -112,6 +121,7 @@ class App:
             raw = self.engine.transcribe(to_wav_bytes(audio), dic)
             if not raw:
                 print("  （聞き取れませんでした）", flush=True)
+                self.flash("🔇 声が聞き取れませんでした", 2.5)
                 return
             t1 = time.time()
             text = raw
@@ -131,6 +141,7 @@ class App:
             self.sound("error")
             macos.notify("koe-input", err)
             print(f"  {err}", flush=True)
+            self.flash("⚠️ 変換に失敗しました", 3)
             self.status = "error"
             return False
 
@@ -139,7 +150,10 @@ class App:
         self.last_text = text
         try:
             self.sm.wait_all_released()
+            print("  貼り付けます", flush=True)
             macos.paste_text(text, self.b["restore_clipboard"])
+            print("  貼り付けました", flush=True)
+            self.flash("✓ 入力しました", 1.2)
         except Exception as e:
             macos.notify("koe-input", f"貼り付けに失敗。履歴ページからコピーしてください: {e}")
             print(f"  貼り付けエラー: {e}", flush=True)
@@ -187,6 +201,9 @@ def auto_update_loop(app: App, hours: float):
 
 
 def main():
+    # 万一 Python ごと落ちたときに、どこで落ちたかをログに残す
+    import faulthandler
+    faulthandler.enable(all_threads=True)
     ensure_user_files()
     lock = single_instance_lock()
     if lock is None:

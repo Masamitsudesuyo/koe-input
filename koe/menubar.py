@@ -2,6 +2,7 @@
 import os
 import subprocess
 import threading
+import time
 
 import rumps
 
@@ -35,8 +36,14 @@ class MenuBar(rumps.App):
             rumps.MenuItem("終了", callback=self.quit),
         ]
         self._shown = None
-        # 0.2秒ごとに状態をアイコンへ反映（画面の更新はこのスレッドでしかできないため）
-        self.timer = rumps.Timer(self.tick, 0.2)
+        self.overlay = None
+        try:
+            from .overlay import Overlay
+            self.overlay = Overlay()
+        except Exception as e:
+            print(f"（画面下の表示を作れませんでした: {e}）", flush=True)
+        # 0.1秒ごとに状態を画面へ反映（画面の更新はこのスレッドでしかできないため）
+        self.timer = rumps.Timer(self.tick, 0.1)
         self.timer.start()
 
     def tick(self, _):
@@ -45,8 +52,27 @@ class MenuBar(rumps.App):
             self.title = ICONS.get(st, ICONS["idle"])
             self.status_item.title = f"状態: {LABELS.get(st, st)}"
             self._shown = st
+        self.update_overlay(st)
         if self.app.restart_requested and self.app.is_idle():
             os._exit(42)  # 42 = 「再起動して」の合図。scripts/run.sh が受け取って起動し直す
+
+    def update_overlay(self, st):
+        if not self.overlay:
+            return
+        try:
+            now = time.monotonic()
+            if st == "rec":
+                sec = int(now - self.app.rec_started)
+                self.overlay.show(f"🔴 録音中  {sec // 60}:{sec % 60:02d}")
+            elif st == "busy":
+                self.overlay.show("⏳ 変換中…")
+            elif now < self.app.flash_until:
+                self.overlay.show(self.app.flash_text)
+            else:
+                self.overlay.hide()
+        except Exception as e:
+            print(f"（画面下の表示でエラー: {e}）", flush=True)
+            self.overlay = None
 
     def copy_last(self, _):
         if self.app.last_text:
