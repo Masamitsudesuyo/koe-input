@@ -30,7 +30,9 @@ echo "[3/6] 最新版をダウンロードします（${REPO}）"
 SHA=$(curl -fsSL -H "Accept: application/vnd.github.sha" "https://api.github.com/repos/$REPO/commits/main")
 TMP=$(mktemp -d)
 curl -fsSL "https://codeload.github.com/$REPO/zip/$SHA" -o "$TMP/src.zip"
-unzip -q "$TMP/src.zip" -d "$TMP/src"
+mkdir -p "$TMP/src"
+# macOS 標準の unzip は日本語ファイル名で失敗することがあるため、ditto（macOS 標準の展開ツール）を使う
+ditto -x -k "$TMP/src.zip" "$TMP/src"
 SRC=$(find "$TMP/src" -mindepth 1 -maxdepth 1 -type d | head -1)
 mkdir -p "$DIR"
 # 自分で編集するファイル（設定・辞書・履歴）は上書きしない
