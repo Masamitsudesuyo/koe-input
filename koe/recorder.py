@@ -19,10 +19,24 @@ class Recorder:
 
         with self._lock:
             self._chunks = []
-            self._stream = sd.InputStream(
-                samplerate=SAMPLE_RATE, channels=1, dtype="int16", callback=self._callback
-            )
-            self._stream.start()
+            try:
+                self._open(sd)
+            except Exception as e:
+                # 録音の部品(PortAudio)は、起動した時点のマイク一覧を覚えたままになる。
+                # スリープ復帰・イヤホンの抜き差し・Bluetooth の接続切替でマイクが変わると、
+                # 古い情報のまま開こうとして失敗するので、マイク一覧を読み直して1回だけやり直す。
+                print(f"  マイクを開けなかったため、マイク一覧を読み直します（{e}）", flush=True)
+                sd._terminate()
+                sd._initialize()
+                self._open(sd)
+
+    def _open(self, sd):
+        dev = sd.query_devices(kind="input")
+        print(f"  使用マイク: {dev.get('name', '?')}", flush=True)
+        self._stream = sd.InputStream(
+            samplerate=SAMPLE_RATE, channels=1, dtype="int16", callback=self._callback
+        )
+        self._stream.start()
 
     def _callback(self, indata, frames, time_info, status):
         self._chunks.append(indata.copy())
