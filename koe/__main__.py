@@ -35,8 +35,14 @@ class App:
         self.flash_until = 0.0
         self.lock = threading.Lock()
         tap = 1e9 if self.b["mode"] == "toggle" else self.b["tap_threshold_sec"]
+        # キー監視の処理はすぐ返さないと、Mac がキー監視自体を止めてしまうことがある。
+        # そのため録音開始などの実際の処理は、専用の作業係(1本のスレッド)に渡して順番に行う。
+        self.ctl = ThreadPoolExecutor(max_workers=1)
         self.sm = HotkeyStateMachine(
-            on_start=self.start, on_stop=self.stop, on_cancel=self.cancel, tap_threshold=tap,
+            on_start=lambda: self.ctl.submit(self.start),
+            on_stop=lambda: self.ctl.submit(self.stop),
+            on_cancel=lambda: self.ctl.submit(self.cancel),
+            tap_threshold=tap,
         )
 
     def sound(self, name):
@@ -68,16 +74,37 @@ class App:
                 self.sound("start")
                 print("● 録音中…", flush=True)
             except Exception as e:
+                # マイクの部品が古い状態のまま壊れている。部品ごと作り直すため再起動する
+                self.sm.reset()
                 self.status = "error"
                 self.sound("error")
-                macos.notify("koe-input", f"マイクを開けません: {e}")
+                self.flash("🔄 マイクを再接続中… 数秒後にもう一度押してください", 4)
                 print(f"マイクエラー: {e}", flush=True)
+                self.request_restart("マイクを開けなかった")
+
+    def request_restart(self, reason: str):
+        """使っていないときに再起動する予約。理由はログに残す。"""
+        if not self.restart_requested:
+            print(f"[再起動予約] {reason}", flush=True)
+        self.restart_requested = True
+
+    def auto_stop(self):
+        """録音の上限時間を超えたときに、自動で録音を終えて処理する。"""
+        self.sm.reset()
+        self.stop()
 
     def stop(self):
         with self.lock:
             if not self.recording:
                 return
-            audio = self.recorder.stop()
+            try:
+                audio = self.recorder.stop()
+            except Exception as e:
+                print(f"録音の終了でエラー: {e}", flush=True)
+                self.recording = False
+                self.status = "error"
+                self.request_restart("録音の終了に失敗した")
+                return
             self.recording = False
             self.pending += 1
             self.status = "busy"
@@ -87,7 +114,11 @@ class App:
     def cancel(self):
         with self.lock:
             if self.recording:
-                self.recorder.stop()
+                try:
+                    self.recorder.stop()
+                except Exception as e:
+                    print(f"録音の終了でエラー: {e}", flush=True)
+                    self.request_restart("録音の終了に失敗した")
                 self.recording = False
                 self._refresh_status()
                 self.sound("cancel")
@@ -239,6 +270,12 @@ def main():
     check_permissions()
     listener = KeyListener(app.sm)
     listener.start()
+
+    from .health import Watchdog
+    Watchdog(
+        app, listener_alive=lambda: listener.listener.is_alive(),
+        max_record_sec=cfg["behavior"]["max_record_sec"],
+    ).start()
 
     if cfg["update"]["auto"]:
         threading.Thread(

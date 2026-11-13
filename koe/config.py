@@ -46,6 +46,7 @@ def load_config() -> dict:
     b.setdefault("restore_clipboard", False)
     b.setdefault("sounds", True)
     b.setdefault("history_port", 8765)
+    b.setdefault("max_record_sec", 600)  # 録音の上限（秒）。音声認識の送信上限(約13分)より短くしておく
     u = cfg.setdefault("update", {})
     u.setdefault("auto", True)
     u.setdefault("check_interval_hours", 6)

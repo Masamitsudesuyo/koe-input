@@ -63,6 +63,11 @@ class HotkeyStateMachine:
             self.wait_release = False
             self.released.set()
 
+    def reset(self):
+        """録音が外から終了・失敗したときに、待機状態へ戻す。"""
+        self.state = IDLE
+        self.wait_release = bool(self.down)
+
     def wait_all_released(self, timeout=2.0):
         """貼り付け(Cmd+V)を送る前に、Option/Command が離されるのを待つ。"""
         self.released.wait(timeout)

@@ -1,6 +1,7 @@
 """マイク録音。"""
 import io
 import threading
+import time
 import wave
 
 import numpy as np
@@ -19,16 +20,32 @@ class Recorder:
 
         with self._lock:
             self._chunks = []
-            try:
-                self._open(sd)
-            except Exception as e:
-                # 録音の部品(PortAudio)は、起動した時点のマイク一覧を覚えたままになる。
-                # スリープ復帰・イヤホンの抜き差し・Bluetooth の接続切替でマイクが変わると、
-                # 古い情報のまま開こうとして失敗するので、マイク一覧を読み直して1回だけやり直す。
-                print(f"  マイクを開けなかったため、マイク一覧を読み直します（{e}）", flush=True)
-                sd._terminate()
-                sd._initialize()
-                self._open(sd)
+            # 録音の部品(PortAudio)は、起動した時点のマイク一覧を覚えたままになる。
+            # スリープ復帰・イヤホンの抜き差し・Bluetooth の接続切替でマイクが変わると、
+            # 古い情報のまま開こうとして失敗するので、マイク一覧を読み直してやり直す。
+            # Bluetooth は切り替えに時間がかかるため、少し待ちながら最大3回試す。
+            last = None
+            for attempt in range(3):
+                try:
+                    if attempt:
+                        print(f"  マイク一覧を読み直して再試行（{attempt}回目）: {last}", flush=True)
+                        self._close_quietly()
+                        sd._terminate()
+                        time.sleep(0.3 * attempt)
+                        sd._initialize()
+                    self._open(sd)
+                    return
+                except Exception as e:
+                    last = e
+            raise last
+
+    def _close_quietly(self):
+        try:
+            if self._stream is not None:
+                self._stream.close()
+        except Exception:
+            pass
+        self._stream = None
 
     def _open(self, sd):
         dev = sd.query_devices(kind="input")
@@ -44,9 +61,10 @@ class Recorder:
     def stop(self) -> np.ndarray:
         with self._lock:
             if self._stream is not None:
-                self._stream.stop()
-                self._stream.close()
-                self._stream = None
+                try:
+                    self._stream.stop()
+                finally:
+                    self._close_quietly()
             if not self._chunks:
                 return np.zeros(0, dtype=np.int16)
             return np.concatenate(self._chunks).reshape(-1)
