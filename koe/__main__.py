@@ -141,6 +141,14 @@ class App:
     # ---- 録音後の処理（別スレッド）----
     def process(self, audio):
         dur = duration_sec(audio)
+        if dur >= 0.5 and len(audio) and int(abs(audio).max()) == 0:
+            # 本当に静かでも、マイクには小さな雑音が必ず入る。完全な 0 だけが続くのは、
+            # スリープ復帰などでマイクの接続が切れている状態。部品を作り直すため再起動する。
+            print(f"  （{dur:.1f}秒・マイクから音が届いていない）", flush=True)
+            self.flash("🔄 マイクを再接続しました。もう一度話してください", 4)
+            self.sound("error")
+            self.request_restart("マイクから音が届いていなかった")
+            return
         if dur < self.b["min_record_sec"] or is_silent(audio):
             print(f"  （{dur:.1f}秒・無音のためスキップ）", flush=True)
             self.flash("🔇 声が聞き取れませんでした", 2.5)
