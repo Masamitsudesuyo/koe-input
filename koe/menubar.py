@@ -24,6 +24,9 @@ class MenuBar(rumps.App):
         self.menu = [
             self.status_item,
             None,
+            rumps.MenuItem("録音を止めて入力", callback=self.stop_recording),
+            rumps.MenuItem("録音を取り消す", callback=self.cancel_recording),
+            None,
             rumps.MenuItem("直前の結果をコピー", callback=self.copy_last),
             rumps.MenuItem("履歴を開く", callback=self.open_history),
             rumps.MenuItem("辞書を編集", callback=self.open_dict),
@@ -73,6 +76,14 @@ class MenuBar(rumps.App):
         except Exception as e:
             print(f"（画面下の表示でエラー: {e}）", flush=True)
             self.overlay = None
+
+    def stop_recording(self, _):
+        self.app.sm.reset()
+        self.app.request_stop()
+
+    def cancel_recording(self, _):
+        self.app.sm.reset()
+        self.app.ctl.submit(self.app.cancel)
 
     def copy_last(self, _):
         if self.app.last_text:

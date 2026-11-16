@@ -51,3 +51,28 @@ assert sm.state=="idle"
 sm.press("alt"); sm.press("cmd"); assert log==["start","start"], log
 print("reset ok")
 print("HEALTH OK")
+
+# ---- 停止が固まる: 3秒で見切り、hung=True
+import threading
+class HangStream:
+    def __init__(self, **kw): pass
+    def start(self): pass
+    def abort(self): threading.Event().wait(10)   # 固まる
+    def close(self): pass
+sd.InputStream = HangStream
+calls.update(fail=0)
+r = R.Recorder(); r.start(); r._chunks.append(np.ones(1600, dtype=np.int16))
+import time as _t; t0=_t.monotonic(); a = r.stop(); el=_t.monotonic()-t0
+assert r.hung and len(a)==1600 and el < 4, (r.hung, len(a), el)
+print("hung stop ok", round(el,1))
+
+# ---- 見張り: 停止操作から10秒以上録音が終わらない → 強制再起動
+class FA(FakeApp):
+    def __init__(self): super().__init__(); self.forced=[]; self.stop_requested_at=0.0
+    def force_restart(self, r): self.forced.append(r)
+app2=FA(); c={"wall":0.0,"mono":0.0}
+w2=Watchdog(app2, lambda: True, wall=lambda: c["wall"], mono=lambda: c["mono"])
+app2.recording=True; app2.rec_started=0; app2.stop_requested_at=1.0
+c["wall"]=c["mono"]=5; w2.check(); assert not app2.forced
+c["wall"]=c["mono"]=12; w2.check(); assert app2.forced, app2.forced
+print("stuck watchdog ok", app2.forced)

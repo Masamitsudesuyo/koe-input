@@ -14,6 +14,7 @@ class Recorder:
         self._chunks: list[np.ndarray] = []
         self._stream = None
         self._lock = threading.Lock()
+        self.hung = False  # 直前の停止が固まったか
 
     def start(self):
         import sounddevice as sd  # マイクが無い環境でも他の部分をテストできるよう遅延 import
@@ -59,15 +60,34 @@ class Recorder:
         self._chunks.append(indata.copy())
 
     def stop(self) -> np.ndarray:
+        """録音を止めて、ここまでの音声を返す。
+
+        Mac のマイクの調子が悪いと、停止の命令が返ってこない（固まる）ことがある。
+        そのため停止は別の作業係にやらせて、3秒待っても終わらなければ見切りをつけ、
+        ここまで録れた音声で先に進む（hung=True にして、呼び出し側に再起動を促す）。
+        """
         with self._lock:
-            if self._stream is not None:
-                try:
-                    self._stream.stop()
-                finally:
-                    self._close_quietly()
-            if not self._chunks:
+            stream, self._stream = self._stream, None
+            self.hung = False
+            if stream is not None:
+                done = threading.Event()
+
+                def _halt():
+                    for f in (stream.abort, stream.close):  # abort = 残りを捨てて即停止
+                        try:
+                            f()
+                        except Exception:
+                            pass
+                    done.set()
+
+                threading.Thread(target=_halt, daemon=True).start()
+                if not done.wait(3.0):
+                    self.hung = True
+                    print("  録音の停止が応答しないため、ここまでの音声で続行します", flush=True)
+            chunks, self._chunks = self._chunks, []
+            if not chunks:
                 return np.zeros(0, dtype=np.int16)
-            return np.concatenate(self._chunks).reshape(-1)
+            return np.concatenate(chunks).reshape(-1)
 
 
 def duration_sec(audio: np.ndarray) -> float:

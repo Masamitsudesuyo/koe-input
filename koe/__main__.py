@@ -33,6 +33,7 @@ class App:
         self.rec_started = 0.0           # 録音開始時刻（画面下の表示で経過時間を出すため）
         self.flash_text = ""             # 処理後に一瞬だけ画面下に出す文字
         self.flash_until = 0.0
+        self.stop_requested_at = 0.0     # 停止の操作を受けた時刻（固まり検知用）
         self.lock = threading.Lock()
         tap = 1e9 if self.b["mode"] == "toggle" else self.b["tap_threshold_sec"]
         # キー監視の処理はすぐ返さないと、Mac がキー監視自体を止めてしまうことがある。
@@ -40,7 +41,7 @@ class App:
         self.ctl = ThreadPoolExecutor(max_workers=1)
         self.sm = HotkeyStateMachine(
             on_start=lambda: self.ctl.submit(self.start),
-            on_stop=lambda: self.ctl.submit(self.stop),
+            on_stop=self.request_stop,
             on_cancel=lambda: self.ctl.submit(self.cancel),
             tap_threshold=tap,
         )
@@ -88,14 +89,29 @@ class App:
             print(f"[再起動予約] {reason}", flush=True)
         self.restart_requested = True
 
+    def request_stop(self):
+        """停止の操作（ホットキー・メニュー・上限時間）を受け付けて、作業係に渡す。"""
+        if not self.recording:
+            return
+        self.stop_requested_at = time.monotonic()
+        print("  （停止の操作を受け付けました）", flush=True)
+        self.ctl.submit(self.stop)
+
     def auto_stop(self):
         """録音の上限時間を超えたときに、自動で録音を終えて処理する。"""
         self.sm.reset()
-        self.stop()
+        self.request_stop()
+
+    def force_restart(self, reason: str):
+        """録音が止まらないなど、待っても直らないときの最終手段。すぐに起動し直す。"""
+        print(f"[強制再起動] {reason}", flush=True)
+        macos.notify("koe-input", "録音が止まらなくなったため、自動で起動し直しました。直前の録音はやり直してください")
+        os._exit(42)  # scripts/run.sh が受け取って起動し直す
 
     def stop(self):
         with self.lock:
             if not self.recording:
+                self.stop_requested_at = 0.0
                 return
             try:
                 audio = self.recorder.stop()
@@ -106,6 +122,9 @@ class App:
                 self.request_restart("録音の終了に失敗した")
                 return
             self.recording = False
+            self.stop_requested_at = 0.0
+            if getattr(self.recorder, "hung", False):
+                self.request_restart("録音の停止が固まった")
             self.pending += 1
             self.status = "busy"
         self.sound("stop")
